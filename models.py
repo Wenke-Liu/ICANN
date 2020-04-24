@@ -22,7 +22,7 @@ class ICANN:
                  input_size=None,
                  hidden_size=None,
                  latent_size=None,
-                 nonlinearity='relu',
+                 nonlinearity='tanh',
                  ica_weight=0.005,
                  learning_rate=1e-3,
                  batch_size=256,
@@ -36,6 +36,7 @@ class ICANN:
         self.learning_rate = learning_rate
         self.batch_size = batch_size
 
+        self.datetime = datetime.now().strftime(r"%y%m%d_%H%M")
         self.model = self.build()
 
         if model_dir:  # Built model architecture and load saved weights from file
@@ -48,29 +49,30 @@ class ICANN:
             encoder = tf.keras.layers.Dense(self.latent_size,
                                           activation='linear',
                                           use_bias=False,
-                                          name='encoder')
+                                          name='latent')
             latents = encoder(inputs)
-            decoder = layers.DenseTranspose(encoder,
+            reconstructed = layers.DenseTranspose(encoder,
                                             activation='linear',
                                             use_bias=False,
-                                            name='decoder')
-            reconstructed = decoder(latents)
-        else:  # nonlinear version, with hidden layers, not tying weights
+                                            name='output')(latents)
+
+        else:  # nonlinear hidden layers, output as
             h_encoded = inputs
             if isinstance(self.hidden_size, Iterable):
                 h_list = list(self.hidden_size)
             else:
                 h_list = [self.hidden_size]
-
+            encoder = []
             for idx, h in enumerate(h_list):
-                h_encoded = tf.keras.layers.Dense(h, activation=self.nonlinearity,
-                                                  name='encoder_'+str(idx))(h_encoded)
+                encoder.append(tf.keras.layers.Dense(h, activation=self.nonlinearity, name='encoder_'+str(idx)))
+            for encoder_layer in encoder:
+                h_encoded = encoder_layer(h_encoded)
 
             latents = tf.keras.layers.Dense(self.latent_size, activation='linear', name='latent')(h_encoded)
+
             h_encoded = latents
             for idx, h in enumerate(reversed(h_list)):
-                h_encoded = tf.keras.layers.Dense(h, activation=self.nonlinearity,
-                                                  name='decoder_'+str(idx))(h_encoded)
+                h_encoded = tf.keras.layers.Dense(h, activation=self.nonlinearity, name='decoder_'+str(idx))(h_encoded)
 
             reconstructed = tf.keras.layers.Dense(self.input_size, activation='linear', name='output')(h_encoded)
 
@@ -84,12 +86,23 @@ class ICANN:
 
         return model
 
-    def train(self, x_train, epochs=10, save=True, model_dir='./model', log_dir='./log'):
+    def train(self, x_train, epochs=1000, save=True, model_dir='./model', log_dir='./log'):
         self.model.fit(x_train, x_train,
                        batch_size=self.batch_size, shuffle=True,
                        epochs=epochs)
         if save:
-            self.model.save_weights(model_dir)
+            if isinstance(self.hidden_size, Iterable):
+                h_list = list(self.hidden_size)
+            else:
+                h_list = [self.hidden_size]
+            save_name = os.path.join(os.path.abspath(model_dir),
+                                     "{}_ICANN_h_{}_lat_{}_lr_{}_icaw_{}".format(str(self.datetime),
+                                                                               "-".join(map(str, h_list)),
+                                                                               str(self.latent_size),
+                                                                               str(self.learning_rate),
+                                                                               str(self.ica_weight)))
+            self.model.save_weights(save_name)
+            print('Model saved in: ' + save_name)
 
     def reconstructed(self, inputs):
         return self.model(inputs)
