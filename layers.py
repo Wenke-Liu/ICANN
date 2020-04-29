@@ -8,11 +8,12 @@ class DenseTranspose(tf.keras.layers.Layer):
         self.use_bias = use_bias
         self.activation = tf.keras.activations.get(activation)
         super().__init__(**kwargs)
-        self.biases = self.add_weight(name='bias',
-                                      shape=[self.dense.input_shape[-1]],
-                                      initializer='zeros')
 
     def build(self, batch_input_shape):
+        if self.use_bias:
+            self.biases = self.add_weight(name='bias',
+                                          shape=[self.dense.input_shape[-1]],
+                                          initializer='zeros')
         super().build(batch_input_shape)
 
     def call(self, inputs, **kwargs):
